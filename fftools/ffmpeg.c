@@ -30,6 +30,8 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <stdatomic.h>
 #include <stdint.h>
 
@@ -4835,6 +4837,101 @@ int main(int argc, char **argv)
         av_log_set_callback(log_callback_null);
         argc--;
         argv++;
+    }
+
+    // read args from file
+    for (int i = 1; i < argc; i++) {
+        int max_buf_size = 256 * 1024 * 1024;
+        char *buf;
+        char **argvv;
+        int cur_max = 256;
+        int idx = 1;
+
+        if (!strcmp(argv[i], "-rf")) {
+            char* apath;
+            FILE *argf;
+            char wf[4];
+            if (argc < i + 2) {
+                fprintf(stderr, "Please indicate the args input file!");
+                return -1;
+            }
+            apath = argv[i+1];
+            argf = fopen(apath, "r");
+
+            if (argf == NULL) {
+                fprintf(stderr, "Can not open args file:%s", apath);
+                return -1;
+            }
+
+            buf = malloc(max_buf_size);
+            argvv = malloc(sizeof(char *) * cur_max);
+
+            while (1) {
+                int len;
+                char *line = fgets(buf, max_buf_size, argf);
+                if (line == NULL) {
+                    break;
+                }
+                len = strlen(line);
+                // delete new line characters
+                if (line[len -1] == '\n') {
+                    line[len - 1] = '\0';
+                    if (line[len - 2] == '\r') {
+                        line[len - 2] = '\0';
+                        len = len - 2;
+                    } else {
+                        len = len - 1;
+                    }
+                }
+                if (idx > cur_max - 1) {
+                    cur_max *= 2;
+                    argvv = realloc(argvv, sizeof(char *) * cur_max);
+                }
+                argvv[idx]= malloc(len + 1);
+                // memcpy(argvv[idx], line, len);
+                strcpy(argvv[idx], line);
+                idx++;
+            }
+
+            argc = idx;
+            argc += 2;
+            argvv[idx] = strcpy(wf, "-wf");
+            argvv[idx + 1] = strcat(apath, "-rb");
+            argvv[0] = argv[0];
+
+            argv = argvv;
+            fclose(argf);
+            free(buf);
+        }
+    }
+
+    for (int i = 1; i < argc; i++) {
+        // save args to file
+        if (!strcmp(argv[i], "-wf")) {
+            char* apath;
+            FILE *argf;
+
+            if (argc < i + 2) {
+                fprintf(stderr, "Please indicate the args output file!");
+                return -1;
+            }
+            apath = argv[i+1];
+            argf = fopen(apath, "wb");
+            for (int j = 1; j < argc; j++) {
+                if ((j == i) || (j == i + 1)) {
+                    continue;
+                }
+                fprintf(argf, "%s\n", argv[j]);
+            }
+            fclose(argf);
+
+            for (int j = i + 2; j < argc; j++) {
+                argv[j - 2] = argv[j];
+            }
+            argv[argc - 1] = NULL;
+            argv[argc - 2] = NULL;
+            argc -= 2;
+        }
     }
 
 #if CONFIG_AVDEVICE
